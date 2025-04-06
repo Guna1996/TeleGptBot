@@ -421,7 +421,6 @@ async def handle_link_violation(update, context, username, chat_id, user_id):
     until_date = update.message.date + mute_duration
     permissions = ChatPermissions(
         can_send_messages=False,
-        can_send_media_messages=False,
         can_send_other_messages=False,
         can_add_web_page_previews=False
     )

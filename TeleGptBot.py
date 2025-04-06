@@ -12,8 +12,8 @@ from datetime import timedelta
 from pydub import AudioSegment
 
 # Bot configuration
-TOKEN: Final = '1707467959:AAEVhQeYzTAlDvN_TimqMa6TFYIuZ_hy9oE'
-# TOKEN: Final = '1332501115:AAHOVj2bTdGydfU5ye57ktebymzufLRaSGY'
+# TOKEN: Final = '1707467959:AAEVhQeYzTAlDvN_TimqMa6TFYIuZ_hy9oE'
+TOKEN: Final = '1332501115:AAHOVj2bTdGydfU5ye57ktebymzufLRaSGY'
 BOT_USERNAME: Final = '@Lilly007_bot'
 
 # Google Gemini configuration
@@ -121,22 +121,114 @@ async def cricket_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     keyboard = []
+    # Add a header row with close button
+    keyboard.append([
+        InlineKeyboardButton("🏏 LIVE CRICKET MATCHES", callback_data="live_matches"),
+        InlineKeyboardButton("❌ Close", callback_data="close")
+    ])
+    
+    # Add match categories with separate sections for each type
     for match_type, matches in matches_by_type.items():
         # Add match type as a header button (not clickable)
-        keyboard.append([InlineKeyboardButton(f"📋 {match_type.upper()} MATCHES", callback_data="header")])
-        # Add each match under its type
-        for match in matches:
-            match_name = match.get('name', 'Unknown Match')
-            match_id = match.get('id', '')
-            keyboard.append([InlineKeyboardButton(match_name, callback_data=f"match_{match_id}")])
+        keyboard.append([InlineKeyboardButton(f"📋 {match_type.upper()} MATCHES", callback_data=f"category_{match_type}")])
+    
+    # Add view all matches option
+    keyboard.append([InlineKeyboardButton("👁️ View All Matches", callback_data="view_all")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     # Use the appropriate method based on whether this is an initial command or a callback
     if hasattr(update, 'callback_query') and update.callback_query:
-        await update.callback_query.edit_message_text("Select a match:", reply_markup=reply_markup)
+        await update.callback_query.edit_message_text("Select a match category:", reply_markup=reply_markup)
     else:
-        await update.message.reply_text("Select a match:", reply_markup=reply_markup)
+        await update.message.reply_text("Select a match category:", reply_markup=reply_markup)
+
+async def show_live_matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show only matches that haven't ended yet"""
+    _, all_matches = get_current_matches()
+    
+    # Filter out matches that have ended
+    live_matches = [match for match in all_matches if not match.get('matchEnded', False)]
+    
+    if not live_matches:
+        # No live matches available
+        keyboard = [
+            [InlineKeyboardButton("🔙 Back to Categories", callback_data="back_to_categories")],
+            [InlineKeyboardButton("❌ Close", callback_data="close")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text("No live matches currently available.", reply_markup=reply_markup)
+        return
+    
+    # Group live matches by type for better organization
+    live_matches_by_type = {}
+    for match in live_matches:
+        match_type = match.get('matchType', 'unknown')
+        if match_type not in live_matches_by_type:
+            live_matches_by_type[match_type] = []
+        live_matches_by_type[match_type].append(match)
+    
+    keyboard = []
+    # Add a header row
+    keyboard.append([
+        InlineKeyboardButton("🏏 LIVE MATCHES ONLY", callback_data="header"),
+        InlineKeyboardButton("❌ Close", callback_data="close")
+    ])
+    
+    # Add matches grouped by type
+    for match_type, matches in live_matches_by_type.items():
+        # Add match type as a header
+        keyboard.append([InlineKeyboardButton(f"📋 {match_type.upper()}", callback_data="header")])
+        # Add matches under this type
+        for match in matches:
+            match_name = match.get('name', 'Unknown Match')
+            match_id = match.get('id', '')
+            keyboard.append([InlineKeyboardButton(match_name, callback_data=f"match_{match_id}")])
+    
+    # Add back button
+    keyboard.append([InlineKeyboardButton("🔙 Back to Categories", callback_data="back_to_categories")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.callback_query.edit_message_text("Select a live match:", reply_markup=reply_markup)
+
+
+async def show_matches_by_category(update: Update, context: ContextTypes.DEFAULT_TYPE, category=None):
+    """Show matches filtered by category or all matches if category is None"""
+    matches_by_type, _ = get_current_matches()
+    
+    if not matches_by_type:
+        await update.callback_query.edit_message_text("No matches currently available or error fetching data.")
+        return
+    
+    keyboard = []
+    # Add a header row with close button
+    keyboard.append([
+        InlineKeyboardButton(f"🏏 {category.upper() if category else 'ALL'} MATCHES", callback_data="header"),
+        InlineKeyboardButton("❌ Close", callback_data="close")
+    ])
+    
+    # If we're showing a specific category
+    if category and category in matches_by_type:
+        for match in matches_by_type[category]:
+            match_name = match.get('name', 'Unknown Match')
+            match_id = match.get('id', '')
+            keyboard.append([InlineKeyboardButton(match_name, callback_data=f"match_{match_id}")])
+    # If we're showing all matches
+    elif not category:
+        for match_type, matches in matches_by_type.items():
+            # Add match type as a header
+            keyboard.append([InlineKeyboardButton(f"📋 {match_type.upper()}", callback_data="header")])
+            # Add matches under this type
+            for match in matches:
+                match_name = match.get('name', 'Unknown Match')
+                match_id = match.get('id', '')
+                keyboard.append([InlineKeyboardButton(match_name, callback_data=f"match_{match_id}")])
+    
+    # Add back button
+    keyboard.append([InlineKeyboardButton("🔙 Back to Categories", callback_data="back_to_categories")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.callback_query.edit_message_text("Select a match:", reply_markup=reply_markup)
 
 # Callback query handler for inline keyboard
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -145,13 +237,36 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     callback_data = query.data
     
+    # Handle close button - delete the message
+    if callback_data == "close":
+        await query.delete_message()
+        return
+    
     if callback_data == "header":
         # Header buttons do nothing
         return
     
-    if callback_data == "back":
-        # Go back to match selection
+    if callback_data == "live_matches":
+        # Show only live (not ended) matches
+        await show_live_matches(update, context)
+        return
+    
+    if callback_data == "back_to_categories":
+        # Go back to match categories
         await cricket_command(update, context)
+        return
+        
+    if callback_data == "view_all":
+        # Show all matches
+        await show_matches_by_category(update, context, None)
+        return
+        
+    if callback_data.startswith("category_"):
+        # Show matches for a specific category
+        category = callback_data.replace("category_", "")
+        # Store the current category for better back navigation
+        context.user_data['last_category'] = category
+        await show_matches_by_category(update, context, category)
         return
         
     if callback_data.startswith("match_"):
@@ -165,9 +280,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ],
             [
                 InlineKeyboardButton("⏹️ Stop Updates", callback_data=f"stop_{match_id}"),
-                InlineKeyboardButton("🔙 Back", callback_data="back")
-            ]
+                InlineKeyboardButton("🔙 Back", callback_data=f"back_from_actions_{match_id}")
+            ],
+            [InlineKeyboardButton("❌ Close", callback_data="close")]
         ]
+        
+        # Store the current state in user_data to enable proper back navigation
+        if not context.user_data.get('navigation_stack'):
+            context.user_data['navigation_stack'] = []
+        context.user_data['navigation_stack'].append({"type": "match_actions", "match_id": match_id})
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text("Choose an action for this match:", reply_markup=reply_markup)
@@ -177,9 +298,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _, all_matches = get_current_matches()
         score = get_match_score(match_id, all_matches)
         
-        # Add a back button to return to match selection
-        keyboard = [[InlineKeyboardButton("🔙 Back to Matches", callback_data="back")]]
+        # Add back and close buttons
+        keyboard = [
+            [InlineKeyboardButton("🔙 Back to Actions", callback_data=f"back_to_actions_{match_id}")],
+            [InlineKeyboardButton("❌ Close", callback_data="close")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Store navigation state
+        if not context.user_data.get('navigation_stack'):
+            context.user_data['navigation_stack'] = []
+        context.user_data['navigation_stack'].append({"type": "live_score", "match_id": match_id})
         
         await query.edit_message_text(score, reply_markup=reply_markup)
     
@@ -195,8 +324,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         task = asyncio.create_task(send_match_updates(context, chat_id, match_id))
         active_updates[chat_id] = task
         
-        # Add a back button
-        keyboard = [[InlineKeyboardButton("🔙 Back to Matches", callback_data="back")]]
+        # Add back and close buttons
+        keyboard = [
+            [InlineKeyboardButton("🔙 Back to Actions", callback_data=f"back_to_actions_{match_id}")],
+            [InlineKeyboardButton("❌ Close", callback_data="close")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
@@ -212,17 +344,52 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             active_updates[chat_id].cancel()
             del active_updates[chat_id]
             
-            # Add a back button
-            keyboard = [[InlineKeyboardButton("🔙 Back to Matches", callback_data="back")]]
+            # Add back and close buttons
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to Actions", callback_data=f"back_to_actions_{match_id}")],
+                [InlineKeyboardButton("❌ Close", callback_data="close")]
+            ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await query.edit_message_text("Match updates stopped.", reply_markup=reply_markup)
         else:
-            # Add a back button
-            keyboard = [[InlineKeyboardButton("🔙 Back to Matches", callback_data="back")]]
+            # Add back and close buttons
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to Actions", callback_data=f"back_to_actions_{match_id}")],
+                [InlineKeyboardButton("❌ Close", callback_data="close")]
+            ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await query.edit_message_text("No active updates to stop.", reply_markup=reply_markup)
+    
+    # Handle various back navigation patterns
+    elif callback_data.startswith("back_from_actions_"):
+        match_id = callback_data.replace("back_from_actions_", "")
+        # Get the category from context if possible
+        if context.user_data.get('last_category'):
+            await show_matches_by_category(update, context, context.user_data.get('last_category'))
+        else:
+            # If no category stored, go to all matches
+            await show_matches_by_category(update, context, None)
+    
+    elif callback_data.startswith("back_to_actions_"):
+        match_id = callback_data.replace("back_to_actions_", "")
+        
+        # Go back to match actions
+        keyboard = [
+            [
+                InlineKeyboardButton("🔍 Live Score", callback_data=f"live_{match_id}"),
+                InlineKeyboardButton("🔄 Start Updates", callback_data=f"update_{match_id}")
+            ],
+            [
+                InlineKeyboardButton("⏹️ Stop Updates", callback_data=f"stop_{match_id}"),
+                InlineKeyboardButton("🔙 Back", callback_data=f"back_from_actions_{match_id}")
+            ],
+            [InlineKeyboardButton("❌ Close", callback_data="close")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text("Choose an action for this match:", reply_markup=reply_markup)
 
 async def send_match_updates(context, chat_id, match_id):
     """Send match updates every 5 minutes until match ends or updates are canceled"""
@@ -239,8 +406,11 @@ async def send_match_updates(context, chat_id, match_id):
                     match_ended = True
                     break
             
-            # Create keyboard with back button for each update
-            keyboard = [[InlineKeyboardButton("🔙 Back to Matches", callback_data="back")]]
+            # Create keyboard with back and close buttons for each update
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to Matches", callback_data="back_to_categories")],
+                [InlineKeyboardButton("❌ Close", callback_data="close")]
+            ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             # Send update with back button
@@ -265,8 +435,11 @@ async def send_match_updates(context, chat_id, match_id):
         # Task was cancelled, do cleanup if needed
         pass
     except Exception as e:
-        # Create keyboard with back button for error message
-        keyboard = [[InlineKeyboardButton("🔙 Back to Matches", callback_data="back")]]
+        # Create keyboard with back and close buttons for error message
+        keyboard = [
+            [InlineKeyboardButton("🔙 Back to Matches", callback_data="back_to_categories")],
+            [InlineKeyboardButton("❌ Close", callback_data="close")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await context.bot.send_message(
@@ -284,14 +457,20 @@ async def stop_all_updates(update: Update, context: ContextTypes.DEFAULT_TYPE):
         active_updates[chat_id].cancel()
         del active_updates[chat_id]
         
-        # Create keyboard with match selection option
-        keyboard = [[InlineKeyboardButton("🔙 See Available Matches", callback_data="back")]]
+        # Create keyboard with match selection option and close button
+        keyboard = [
+            [InlineKeyboardButton("🔙 See Available Matches", callback_data="back_to_categories")],
+            [InlineKeyboardButton("❌ Close", callback_data="close")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text("All match updates stopped.", reply_markup=reply_markup)
     else:
-        # Create keyboard with match selection option
-        keyboard = [[InlineKeyboardButton("🔙 See Available Matches", callback_data="back")]]
+        # Create keyboard with match selection option and close button
+        keyboard = [
+            [InlineKeyboardButton("🔙 See Available Matches", callback_data="back_to_categories")],
+            [InlineKeyboardButton("❌ Close", callback_data="close")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text("No active updates to stop.", reply_markup=reply_markup)

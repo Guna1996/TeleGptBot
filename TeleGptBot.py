@@ -27,10 +27,14 @@ CRICAPI_CURRENT_MATCHES_URL = "https://api.cricapi.com/v1/currentMatches"
 # Track active score update tasks
 active_updates = {}
 
-# Content moderation patterns
+# Content moderation patterns (Tanglish version)
 BAD_WORDS_PATTERNS = [
     r"\b(?:porn|xxx|sex|adult|free sex|thevidiya|baadu|punda|koothi|bitch|casino|gambling|bet|mayiru|mood|kami di|nude)\b",
-    r"\b(?:ass|dick|fuck|slut|whore|nigga|cunt|faggot|twat|tranny|horny|sexy)\b",
+    r"\b(?:ass|dick|fuck|slut|whore|nigga|cunt|faggot|twat|tranny|horny|sexy|bastard|bimbo|cocksucker|pussy|asshole|douchebag|cum|tits|fist|rape|murder|chutiya|gaandu|madharchod|bhenchod)\b",
+    # Tanglish bad words (English + Tamil mix)
+    r"\b(?:paavam|kothi|adutha level|vayadi|vittu puda|naattu kuthu|koo ra|kuduthi vaa|vaadi|pichai|nalla punda|paavi|mokka|madrasi|mutha|kutti)\b",
+    r"\b(?:chuth|bitch|pundekel|u paavi|kanakku|madharchod|bhenchod|fucka|katti|bimbo|idiot|neenga paavi|suthi)\b",  # Mixed English + Tamil slurs
+    r"\b(?:siru puttukal|kudumbam|yennai vaadi|piching|chitti|pichuvita)\b",  # Some colloquial/insulting phrases
 ]
 
 LINK_PATTERNS = [
@@ -41,7 +45,13 @@ LINK_PATTERNS = [
     r"@\w+",  # Potential Telegram handles
     r"join\.?\s*(?:my|our|the)?\s*(?:channel|group|chat)",  # Join invitations
     r"\b(?:click|visit|check out|join)\b.{0,30}\b(?:link|url|website|channel|group)\b",  # Link invitations
-    r"\b(?:buy|discount|available|pay|service|free|job|girls|win|trading|invest|free|come|call|msg|message|promocode|advertise|buy now|di|dm|trade)\b"
+    r"\b(?:buy|discount|available|pay|service|free|job|girls|win|trading|invest|free|come|call|msg|message|promocode|advertise|buy now|di|dm|trade|offer|earn|deal|join)\b",
+    # Additional patterns for scam-related content
+    r"https?://(?:bit\.ly|t\.me|tinyurl\.com)/\S+",  # Shortened links for phishing
+    r"bit\.ly/\S+",  # Shortened URLs for malicious content
+    r"\b(?:earn|quick cash|fast money|investment|pay now|cryptocurrency|forex|buy now)\b",  # Scams or ads related to earning
+    # Tanglish scam-related words and phrases
+    r"\b(?:invest panna|cryptocurrency buy|fast money earn|quick cash kariya|job pannidalam|dm panna|buy sell bitcoin|easy cash earn)\b",
 ]
 
 # CricAPI Functions

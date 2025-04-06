@@ -5,19 +5,27 @@ import google.generativeai as genai
 import requests
 import speech_recognition as sr
 from typing import Final
-from telegram import Update, ChatPermissions
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from gtts import gTTS
 from datetime import timedelta
 from pydub import AudioSegment
 
 # Bot configuration
-TOKEN: Final = '1707467959:AAEVhQeYzTAlDvN_TimqMa6TFYIuZ_hy9oE'
+# TOKEN: Final = '1707467959:AAEVhQeYzTAlDvN_TimqMa6TFYIuZ_hy9oE'
+TOKEN: Final = '1332501115:AAHOVj2bTdGydfU5ye57ktebymzufLRaSGY'
 BOT_USERNAME: Final = '@Lilly007_bot'
 
 # Google Gemini configuration
 API_KEY = "AIzaSyCH4cYp_chKtFsRvIMxqNrIIbpCFQXNtkI"
 MODEL_NAME = "gemini-1.5-pro"
+
+# Cricket API configuration
+CRICAPI_KEY = "c4dc1efc-789c-4d10-be83-f5f99052e16f"
+CRICAPI_CURRENT_MATCHES_URL = "https://api.cricapi.com/v1/currentMatches"
+
+# Track active score update tasks
+active_updates = {}
 
 # Content moderation patterns
 BAD_WORDS_PATTERNS = [
@@ -36,90 +44,247 @@ LINK_PATTERNS = [
     r"\b(?:buy|discount|available|pay|service|free|job|girls|win|trading|invest|free|come|call|msg|message|promocode|advertise|buy now|di|dm|trade)\b"
 ]
 
-# Live Score API URL
-LIVE_SCORE_API_URL = "https://cric-score.skdev.one/scorecard/115068"  # Replace with the actual live score API endpoint
-
-def is_innings1_completed(data):
-    innings1 = data.get("Innings1", [{}])[2]
-    if innings1 and "overs" in innings1:
-        overs_played = float(innings1["overs"])
-        return overs_played >= 20
-    return False
-
-def get_live_ipl_score():
+# CricAPI Functions
+def get_current_matches():
+    """Get current matches from CricAPI grouped by match type"""
     try:
-        response = requests.get(LIVE_SCORE_API_URL)
+        params = {"apikey": CRICAPI_KEY}
+        response = requests.get(CRICAPI_CURRENT_MATCHES_URL, params=params)
         data = response.json()
-
-        # Check if Innings1 is completed based on overs
-        innings1_completed = is_innings1_completed(data)
-
-        if innings1_completed:  # If Innings1 is completed (20 or more overs)
-            innings1 = data.get("Innings2", [{}])[2]  # Get the final score of Innings1
-            score_data = innings1
-            opponent_team = data.get("Innings1", [{}])[2].get("team", "Opponent Team")
-        else:  # If Innings1 is not completed, use Innings2
-            innings2 = data.get("Innings1", [{}])[2]  # Get the final score of Innings2
-            score_data = innings2
-            opponent_team = data.get("Innings2", [{}])[2].get("team", "Opponent Team")
-
-        # Extract relevant information from the chosen innings
-        score = score_data.get("score", 'Score not available')
-        team = score_data.get("team", 'Team not available')
-        overs = score_data.get("overs", 'Overs not available')
-        wickets = score_data.get("wickets", 'Wickets not available')
-
-        # Constructing the live score message with 'vs' (opponent team)
-        score_message = f"Live IPL Score:\n\n{opponent_team} vs {team} - {score} ({overs}) | Wickets: {wickets}"
-
-        # Return a tuple (score message and match data)
-        return score_message, data
-
+        
+        # Group matches by match type
+        matches_by_type = {}
+        if 'data' in data:
+            for match in data['data']:
+                match_type = match.get('matchType', 'unknown')
+                if match_type not in matches_by_type:
+                    matches_by_type[match_type] = []
+                matches_by_type[match_type].append(match)
+                
+        return matches_by_type, data['data'] if 'data' in data else []
     except Exception as e:
-        # In case of an error, return a default message and empty data
-        return "Error fetching live score: " + str(e), None
+        print(f"Error fetching matches: {str(e)}")
+        return {}, []
 
-def get_live_ipl_score_single():
+def get_match_score(match_id, all_matches):
+    """Get score for a specific match"""
+    for match in all_matches:
+        if match['id'] == match_id:
+            # Construct score message
+            teams = match.get('teams', ['Team A', 'Team B'])
+            team_1, team_2 = teams if len(teams) >= 2 else ('Team A', 'Team B')
+            
+            score_info = match.get('score', [])
+            status = match.get('status', 'Status not available')
+            venue = match.get('venue', 'Venue not available')
+            
+            # Format score information
+            score_lines = []
+            for score_entry in score_info:
+                inning = score_entry.get('inning', '')
+                runs = score_entry.get('r', 0)
+                wickets = score_entry.get('w', 0)
+                overs = score_entry.get('o', 0)
+                score_lines.append(f"{inning}: {runs}/{wickets} ({overs} overs)")
+            
+            score_text = "\n".join(score_lines)
+            
+            match_info = (
+                f"🏏 {match.get('name', 'Match')}\n\n"
+                f"📍 {venue}\n"
+                f"⏰ {match.get('date', 'Date not available')}\n"
+                f"📊 Status: {status}\n\n"
+                f"{score_text}"
+            )
+            
+            return match_info
+    
+    return "Match information not found."
+
+# Command handler for cricket command
+async def cricket_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show available cricket matches grouped by type"""
+    matches_by_type, _ = get_current_matches()
+    
+    if not matches_by_type:
+        await update.message.reply_text("No matches currently available or error fetching data.")
+        return
+    
+    keyboard = []
+    for match_type, matches in matches_by_type.items():
+        # Add match type as a header button (not clickable)
+        keyboard.append([InlineKeyboardButton(f"📋 {match_type.upper()} MATCHES", callback_data="header")])
+        # Add each match under its type
+        for match in matches:
+            match_name = match.get('name', 'Unknown Match')
+            match_id = match.get('id', '')
+            keyboard.append([InlineKeyboardButton(match_name, callback_data=f"match_{match_id}")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Use the appropriate method based on whether this is an initial command or a callback
+    if hasattr(update, 'callback_query') and update.callback_query:
+        await update.callback_query.edit_message_text("Select a match:", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text("Select a match:", reply_markup=reply_markup)
+
+# Callback query handler for inline keyboard
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    callback_data = query.data
+    
+    if callback_data == "header":
+        # Header buttons do nothing
+        return
+    
+    if callback_data == "back":
+        # Go back to match selection
+        await cricket_command(update, context)
+        return
+        
+    if callback_data.startswith("match_"):
+        match_id = callback_data.replace("match_", "")
+        
+        # Create action buttons for this match
+        keyboard = [
+            [
+                InlineKeyboardButton("🔍 Live Score", callback_data=f"live_{match_id}"),
+                InlineKeyboardButton("🔄 Start Updates", callback_data=f"update_{match_id}")
+            ],
+            [
+                InlineKeyboardButton("⏹️ Stop Updates", callback_data=f"stop_{match_id}"),
+                InlineKeyboardButton("🔙 Back", callback_data="back")
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text("Choose an action for this match:", reply_markup=reply_markup)
+    
+    elif callback_data.startswith("live_"):
+        match_id = callback_data.replace("live_", "")
+        _, all_matches = get_current_matches()
+        score = get_match_score(match_id, all_matches)
+        
+        # Add a back button to return to match selection
+        keyboard = [[InlineKeyboardButton("🔙 Back to Matches", callback_data="back")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(score, reply_markup=reply_markup)
+    
+    elif callback_data.startswith("update_"):
+        match_id = callback_data.replace("update_", "")
+        chat_id = update.effective_chat.id
+        
+        # Stop existing updates for this chat
+        if chat_id in active_updates:
+            active_updates[chat_id].cancel()
+        
+        # Start new updates
+        task = asyncio.create_task(send_match_updates(context, chat_id, match_id))
+        active_updates[chat_id] = task
+        
+        # Add a back button
+        keyboard = [[InlineKeyboardButton("🔙 Back to Matches", callback_data="back")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"Started regular updates for this match. Updates will be sent every 5 minutes.\n\nUse /stop_updates to stop all updates.", 
+            reply_markup=reply_markup
+        )
+    
+    elif callback_data.startswith("stop_"):
+        match_id = callback_data.replace("stop_", "")
+        chat_id = update.effective_chat.id
+        
+        if chat_id in active_updates:
+            active_updates[chat_id].cancel()
+            del active_updates[chat_id]
+            
+            # Add a back button
+            keyboard = [[InlineKeyboardButton("🔙 Back to Matches", callback_data="back")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text("Match updates stopped.", reply_markup=reply_markup)
+        else:
+            # Add a back button
+            keyboard = [[InlineKeyboardButton("🔙 Back to Matches", callback_data="back")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text("No active updates to stop.", reply_markup=reply_markup)
+
+async def send_match_updates(context, chat_id, match_id):
+    """Send match updates every 5 minutes until match ends or updates are canceled"""
     try:
-        response = requests.get(LIVE_SCORE_API_URL)
-        data = response.json()
-
-        # Check if Innings1 is completed or not based on overs
-        innings1_completed = is_innings1_completed(data)
-
-        if innings1_completed:  # If Innings1 is completed (20 or more overs)
-            innings1 = data.get("Innings2", [{}])[2]  # Get the final score of Innings1
-            score_data = innings1
-            opponent_team = data.get("Innings1", [{}])[2].get("team", "Opponent Team")
-            print("2222", data.get("Innings2", [{}])[2]);
-
-        else:  # If Innings1 is not completed, use Innings2
-            innings2 = data.get("Innings1", [{}])[2]  # Get the final score of Innings2
-            score_data = innings2
-            print("1111", data.get("Innings2", [{}])[2])
-            opponent_team = data.get("Innings2", [{}])[2].get("team", "Opponent Team")
-
-        # Extract relevant information from the chosen innings
-        score = score_data.get("score", 'Score not available')
-        team = score_data.get("team", 'Team not available')
-        overs = score_data.get("overs", 'Overs not available')
-        wickets = score_data.get("wickets", 'Wickets not available')
-
-        # Constructing the live score message with 'vs' (opponent team)
-        score_message = f"Live IPL Score:\n\n{opponent_team} vs {team} - {score} ({overs}) | Wickets: {wickets}"
-        return score_message
-
+        while True:
+            # Get fresh match data
+            _, all_matches = get_current_matches()
+            score = get_match_score(match_id, all_matches)
+            
+            # Check if match has ended
+            match_ended = False
+            for match in all_matches:
+                if match['id'] == match_id and match.get('matchEnded', False):
+                    match_ended = True
+                    break
+            
+            # Create keyboard with back button for each update
+            keyboard = [[InlineKeyboardButton("🔙 Back to Matches", callback_data="back")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Send update with back button
+            await context.bot.send_message(
+                chat_id=chat_id, 
+                text=score,
+                reply_markup=reply_markup
+            )
+            
+            if match_ended:
+                await context.bot.send_message(
+                    chat_id=chat_id, 
+                    text="Match has ended. Stopping updates.",
+                    reply_markup=reply_markup
+                )
+                break
+            
+            # Wait for 5 minutes
+            await asyncio.sleep(300)
+    
+    except asyncio.CancelledError:
+        # Task was cancelled, do cleanup if needed
+        pass
     except Exception as e:
-        return f"Error fetching live score: {str(e)}"
+        # Create keyboard with back button for error message
+        keyboard = [[InlineKeyboardButton("🔙 Back to Matches", callback_data="back")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"Error in match updates: {str(e)}",
+            reply_markup=reply_markup
+        )
 
-# Command handler for 'IPL' command
-async def ipl_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Responds with the live IPL score when a user sends the command 'IPL'."""
-    print("score")
-    live_score = get_live_ipl_score_single()
-    print("score", live_score)
-    await update.message.reply_text(live_score)
-
+# Command to stop all updates
+async def stop_all_updates(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Stop all active match updates for this chat"""
+    chat_id = update.effective_chat.id
+    
+    if chat_id in active_updates:
+        active_updates[chat_id].cancel()
+        del active_updates[chat_id]
+        
+        # Create keyboard with match selection option
+        keyboard = [[InlineKeyboardButton("🔙 See Available Matches", callback_data="back")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text("All match updates stopped.", reply_markup=reply_markup)
+    else:
+        # Create keyboard with match selection option
+        keyboard = [[InlineKeyboardButton("🔙 See Available Matches", callback_data="back")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text("No active updates to stop.", reply_markup=reply_markup)
 
 # Initialize Google Gemini
 def initialize_gemini():
@@ -140,29 +305,18 @@ def initialize_gemini():
 
     return model.start_chat(history=[])
 
-# Content moderation patterns
-BAD_WORDS_PATTERNS = [
-    r"\b(?:porn|xxx|sex|adult|free sex|thevidiya|baadu|punda|koothi|bitch|casino|gambling|bet|mayiru|mood|kami di|nude)\b",
-    r"\b(?:ass|dick|fuck|slut|whore|nigga|cunt|faggot|twat|tranny|horny|sexy)\b",
-]
-
-LINK_PATTERNS = [
-    r"https?://\S+",
-    r"www\.\S+",
-    r"t\.me/\S+",
-    r"telegram\.(?:me|org|dog)/\S+",
-    r"@\w+",
-    r"join\.?\s*(?:my|our|the)?\s*(?:channel|group|chat)",
-    r"\b(?:click|visit|check out|join)\b.{0,30}\b(?:link|url|website|channel|group)\b",
-    r"\b(?:buy|discount|available|pay|service|free|job|girls|win|trading|invest|free|come|call|msg|message|promocode|advertise|buy now|di|dm|trade)\b"
-]
-
 # Command handlers
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Hello! Thanks for chatting with me! I am Lilly!')
+    await update.message.reply_text('Hello! Thanks for chatting with me! I am Lilly!\n\nUse /cricket to see live cricket matches.')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('I am Lilly. Please type or send a voice message, and I will assist you!')
+    help_text = (
+        "I am Lilly. Please type or send a voice message, and I will assist you!\n\n"
+        "Cricket Commands:\n"
+        "/cricket - View current cricket matches\n"
+        "/stop_updates - Stop all match updates\n"
+    )
+    await update.message.reply_text(help_text)
 
 # Content moderation
 def contains_bad_words(text: str) -> bool:
@@ -280,51 +434,6 @@ async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle errors."""
     print(f'Update {update} caused error {context.error}')
 
-async def send_live_score_periodically(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send live IPL score updates every 7 minutes until the match is completed."""
-    chat_id = update.message.chat_id
-
-    while True:
-        # Get live score and match data
-        live_score, data = get_live_ipl_score()
-
-        if data is None:
-            await context.bot.send_message(chat_id=chat_id, text="Error fetching live score. Please try again later.")
-            break
-
-        # Safely check if 'data' is not None and access its 'result' and 'winning_team' fields
-        winning_team = None
-        if data:
-            winning_team = data.get("result", {}).get("winning_team", None)
-
-        # If the match is not completed
-        if winning_team == "Not Completed":
-            # Send live score update
-            await context.bot.send_message(chat_id=chat_id, text=live_score)
-
-            # Wait for 7 minutes (420 seconds) before sending the next update
-            await asyncio.sleep(300)
-        else:
-            # Match is completed, send the winning team and stop updates
-            await context.bot.send_message(chat_id=chat_id, text=f"Match is completed! Winning team: {winning_team}")
-            break
-
-# Command handler to start live score updates
-async def start_updates(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start sending live IPL score updates every 7 minutes until the match is completed."""
-    await update.message.reply_text("Starting live IPL score updates...")
-
-    # Start sending updates in the background
-    asyncio.create_task(send_live_score_periodically(update, context))
-
-
-# Command handler to stop live score updates
-async def stop_updates(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Stop sending live IPL score updates."""
-    await update.message.reply_text("Live IPL score updates stopped.")
-
-
-
 # Main function
 def main():
     """Initialize and run the bot."""
@@ -332,13 +441,20 @@ def main():
     chat_session = initialize_gemini()
 
     app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler('ipl', ipl_command))  # New handler for IPL score
-    app.add_handler(CommandHandler("startupdates", start_updates))  # Command to start updates
-    app.add_handler(CommandHandler("stopupdates", stop_updates))    # Command to stop updates
+    
+    # Cricket-related handlers
+    app.add_handler(CommandHandler('cricket', cricket_command))
+    app.add_handler(CommandHandler('stop_updates', stop_all_updates))
+    app.add_handler(CallbackQueryHandler(button_callback))
+    
+    # Standard command handlers
     app.add_handler(CommandHandler('start', start_command))
     app.add_handler(CommandHandler('help', help_command))
+    
+    # Message handlers
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    
     app.add_error_handler(error)
 
     print('Polling...')

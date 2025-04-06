@@ -21,7 +21,7 @@ API_KEY = "AIzaSyCH4cYp_chKtFsRvIMxqNrIIbpCFQXNtkI"
 MODEL_NAME = "gemini-1.5-pro"
 
 # Cricket API configuration
-CRICAPI_KEY = "c4dc1efc-789c-4d10-be83-f5f99052e16f"
+CRICAPI_KEY = "b3ac3bd9-62c3-4b80-bfca-7147069f3261"
 CRICAPI_CURRENT_MATCHES_URL = "https://api.cricapi.com/v1/currentMatches"
 
 # Track active score update tasks

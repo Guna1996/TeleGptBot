@@ -12,7 +12,7 @@ from datetime import timedelta
 from pydub import AudioSegment
 
 # Bot configuration
-TOKEN: Final = '1707467959:AAEVhQeYzTAlDvN_TimqMa6TFYIuZ_hy9oE'
+TOKEN: Final = '1707467959:AAHt3HZ0VsIVa3zi6bNtsC94awqBtI3aw9s'
 # TOKEN: Final = '1332501115:AAHOVj2bTdGydfU5ye57ktebymzufLRaSGY'
 BOT_USERNAME: Final = '@Lilly007_bot'
 

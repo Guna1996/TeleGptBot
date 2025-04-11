@@ -397,6 +397,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def send_match_updates(context, chat_id, match_id):
     """Send match updates every 5 minutes until match ends or updates are canceled"""
     try:
+        # Variable to store the previous message ID
+        previous_message_id = None
+        
         while True:
             # Get fresh match data
             _, all_matches = get_current_matches()
@@ -416,12 +419,23 @@ async def send_match_updates(context, chat_id, match_id):
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # Send update with back button
-            await context.bot.send_message(
+            # Delete previous update message if it exists
+            if previous_message_id:
+                try:
+                    await context.bot.delete_message(chat_id=chat_id, message_id=previous_message_id)
+                except Exception as e:
+                    # If deletion fails, continue anyway
+                    print(f"Could not delete previous message: {str(e)}")
+            
+            # Send new update message
+            new_message = await context.bot.send_message(
                 chat_id=chat_id, 
                 text=score,
                 reply_markup=reply_markup
             )
+            
+            # Store the new message ID for deletion next time
+            previous_message_id = new_message.message_id
             
             if match_ended:
                 await context.bot.send_message(

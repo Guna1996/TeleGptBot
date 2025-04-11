@@ -10,6 +10,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from gtts import gTTS
 from datetime import timedelta
 from pydub import AudioSegment
+import logging
 
 # Bot configuration
 TOKEN: Final = os.environ.get('BOT_TOKEN')
@@ -626,6 +627,13 @@ async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     """Initialize and run the bot."""
     global chat_session
+    logging.basicConfig(
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level=logging.INFO
+    )
+    
+    # Define the logger
+    logger = logging.getLogger(__name__)
     chat_session = initialize_gemini()
     if TOKEN:
         # Log first 5 and last 3 characters only for security

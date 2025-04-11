@@ -13,6 +13,8 @@ from pydub import AudioSegment
 import logging
 
 # Bot configuration
+for key, value in os.environ.items():
+    print(f"{key}: {value[:3]}..." if value else f"{key}: None")
 TOKEN: Final = os.environ.get('BOT_TOKEN')
 # TOKEN: Final = '1332501115:AAHOVj2bTdGydfU5ye57ktebymzufLRaSGY'
 BOT_USERNAME: Final = '@Lilly007_bot'

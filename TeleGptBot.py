@@ -627,7 +627,12 @@ def main():
     """Initialize and run the bot."""
     global chat_session
     chat_session = initialize_gemini()
-
+    if TOKEN:
+        # Log first 5 and last 3 characters only for security
+        token_preview = TOKEN[:5] + "..." + TOKEN[-3:]
+        logger.info(f"Token configured: {token_preview}")
+    else:
+        logger.error("TOKEN is empty or not configured!")
     app = Application.builder().token(TOKEN).build()
     
     # Cricket-related handlers

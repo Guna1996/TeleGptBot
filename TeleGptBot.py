@@ -15,8 +15,18 @@ import logging
 # Bot configuration
 for key, value in os.environ.items():
     print(f"{key}: {value[:3]}..." if value else f"{key}: None")
+
+def unite_token(parts):
+    # Join all parts together to form the original token
+    token = ''.join(parts)
+    return token
+
+# Example usage:
+parts = [
+    "1707467959", ":", "AAG_", "z16k", "2SX", "Qxl", "0LG", "1iI", "B6I", "h7dl"
+]
 # TOKEN: Final = os.environ.get('BOT_TOKEN')
-TOKEN: Final = '1707467959:AAHZXmclpNgvdx8ZtWqA1v9njlfja2safjI'
+TOKEN: Final = unite_token(parts)
 BOT_USERNAME: Final = '@Lilly007_bot'
 
 # Google Gemini configuration

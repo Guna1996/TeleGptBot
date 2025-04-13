@@ -23,7 +23,7 @@ def unite_token(parts):
 
 # Example usage:
 parts = [
-    "1707467959", ":", "AAG_", "z16k", "2SX", "Qxl", "0LG", "1iI", "B6I", "h7dl"
+    "1707467959", ":", "AAG_", "z16k", "2SX", "Qxl", "0LG", "1iI", "B6I", "h7dlKweYFoTQ"
 ]
 # TOKEN: Final = os.environ.get('BOT_TOKEN')
 TOKEN: Final = unite_token(parts)

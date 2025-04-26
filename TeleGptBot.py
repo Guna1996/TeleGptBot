@@ -648,6 +648,182 @@ async def send_voice_response(update, response):
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle errors."""
     print(f'Update {update} caused error {context.error}')
+    
+async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Welcome new members with an animation and message in Tamil."""
+    for new_member in update.message.new_chat_members:
+        # Skip if the new member is the bot itself
+        if new_member.id == context.bot.id:
+            continue
+            
+        # Get user info and create proper mention tag
+        user_first_name = new_member.first_name
+        user_mention = f"[{new_member.first_name}](tg://user?id={new_member.id})"
+        
+        # First try sending a welcome GIF/sticker
+        try:
+            # You can use local files or file_ids as discussed earlier
+            sticker_id = "CAACAgIAAxkBAAEB_ENj3npGnr7A2jwj9m1IvYKCwGEDAALeAgACVp29CkAGJPXELhFtLwQ"  # Replace with your sticker ID
+            await context.bot.send_sticker(
+                chat_id=update.effective_chat.id,
+                sticker=sticker_id
+            )
+        except Exception as e:
+            print(f"Error sending sticker: {e}")
+        
+        # Then do the animated text welcome
+        try:
+            await tamil_animated_welcome_message(update, context, user_first_name, user_mention)
+        except Exception as e:
+            print(f"Animation failed, sending normal welcome: {e}")
+            # Fallback to normal welcome message with inline keyboard
+            welcome_text = (
+                f"🌟 வணக்கம் {user_mention}! எங்கள் குழுவிற்கு உங்களை வரவேற்கிறோம்! 🌟\n\n"
+                f"நீங்கள் எங்களுடன் இணைந்ததில் மிக்க மகிழ்ச்சி! உங்களை அறிமுகப்படுத்திக் கொள்ளுங்கள்."
+            )
+            
+            # Create inline keyboard
+            keyboard = create_welcome_inline_keyboard()
+            
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=welcome_text,
+                parse_mode="Markdown",
+                reply_markup=keyboard,
+                reply_to_message_id=update.message.message_id
+            )
+
+async def tamil_animated_welcome_message(update: Update, context: ContextTypes.DEFAULT_TYPE, user_name: str, user_mention: str):
+    """Send a welcome message in Tamil that appears character by character."""
+    # Welcome message content in Tamil
+    welcome_text = (
+        f"வணக்கம் {user_name}! எங்கள் குழுவிற்கு உங்களை வரவேற்கிறோம்! 🌟\n\n"
+        f"நீங்கள் எங்களுடன் இணைந்ததில் மிக்க மகிழ்ச்சி! உங்களை அறிமுகப்படுத்திக் கொள்ளுங்கள்."
+    )
+    
+    # Send initial empty message
+    message = await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="...",
+        reply_to_message_id=update.message.message_id
+    )
+    
+    # Start with empty text
+    current_text = ""
+    
+    # Add one character at a time
+    for char in welcome_text:
+        current_text += char
+        
+        try:
+            # Edit message with updated text
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=message.message_id,
+                text=current_text
+            )
+            
+            # Very short delay between characters
+            delay = 0.1 if char in ['.', '!', '?', '\n'] else 0.05
+            await asyncio.sleep(delay)  # Adjust timing to avoid rate limits
+            
+        except Exception as e:
+            print(f"Error in animation: {e}")
+            # If editing fails, complete the message immediately
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=update.effective_chat.id,
+                    message_id=message.message_id,
+                    text=welcome_text
+                )
+            except:
+                pass  # If final edit fails, just continue
+            break
+    
+    # After animation completes, add inline keyboard
+    try:
+        final_welcome_text = (
+            f"வணக்கம் {user_mention}! எங்கள் குழுவிற்கு உங்களை வரவேற்கிறோம்! 🌟\n\n"
+            f"நீங்கள் எங்களுடன் இணைந்ததில் மிக்க மகிழ்ச்சி! உங்களை அறிமுகப்படுத்திக் கொள்ளுங்கள்."
+        )
+        
+        keyboard = create_welcome_inline_keyboard()
+        
+        await context.bot.edit_message_text(
+            chat_id=update.effective_chat.id,
+            message_id=message.message_id,
+            text=final_welcome_text,
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        print(f"Error adding inline keyboard: {e}")
+        # If adding keyboard fails, just continue with the text message
+
+def create_welcome_inline_keyboard():
+    """Create an inline keyboard with buttons for help, cricket, and other functions."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("உதவி 🤔", callback_data="help"),
+            InlineKeyboardButton("கிரிக்கெட் 🏏", callback_data="cricket")
+        ],
+        [
+            InlineKeyboardButton("விதிமுறைகள் 📜", callback_data="rules"),
+            InlineKeyboardButton("லில்லியை அழைக்க 🤖", url="https://t.me/Lilly007_bot")
+        ]
+    ]
+    
+    return InlineKeyboardMarkup(keyboard)
+
+# Callback handler for inline keyboard buttons
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle button presses from inline keyboards."""
+    query = update.callback_query
+    await query.answer()  # Answer the callback query to stop the loading animation
+    
+    if query.data == "help":
+        help_text = (
+            "🔍 *உதவி மெனு* 🔍\n\n"
+            "• /help - உதவி மெனுவைக் காட்டும்\n"
+            "• /cricket - கிரிக்கெட் தகவல்கள் பெறுங்கள்\n"
+            "• /rules - குழு விதிமுறைகளைக் காட்டும்\n"
+        )
+        await query.edit_message_text(
+            text=help_text,
+            parse_mode="Markdown",
+            reply_markup=create_welcome_inline_keyboard()
+        )
+    
+    elif query.data == "cricket":
+        cricket_text = (
+            "🏏 *கிரிக்கெட் தகவல்கள்* 🏏\n\n"
+            "தற்போதைய கிரிக்கெட் தகவல்கள் பெற:\n"
+            "• /cricket score - தற்போதைய ஸ்கோர்\n"
+            "• /cricket schedule - வரவிருக்கும் போட்டிகள்\n"
+            "• /cricket news - சமீபத்திய செய்திகள்"
+        )
+        await query.edit_message_text(
+            text=cricket_text,
+            parse_mode="Markdown",
+            reply_markup=create_welcome_inline_keyboard()
+        )
+    
+    elif query.data == "rules":
+        rules_text = (
+            "📜 *குழு விதிமுறைகள்* 📜\n\n"
+            "1. மற்றவர்களை மதியுங்கள்\n"
+            "2. ஸ்பாம் அனுப்ப வேண்டாம்\n"
+            "3. தகுந்த தலைப்புகளைப் பற்றி மட்டுமே விவாதிக்கவும்\n"
+            "4. தனிப்பட்ட தகவல்களைப் பகிர வேண்டாம்\n"
+            "5. விதிகளை மீறினால் எச்சரிக்கை பெறுவீர்கள்"
+        )
+        await query.edit_message_text(
+            text=rules_text,
+            parse_mode="Markdown",
+            reply_markup=create_welcome_inline_keyboard()
+        )
 
 # Main function
 def main():
@@ -681,6 +857,8 @@ def main():
     # Message handlers
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     
     app.add_error_handler(error)
 

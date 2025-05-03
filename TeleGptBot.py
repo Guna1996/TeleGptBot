@@ -689,8 +689,7 @@ async def welcome_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 chat_id=update.effective_chat.id,
                 text=welcome_text,
                 parse_mode="Markdown",
-                reply_markup=keyboard,
-                reply_to_message_id=update.message.message_id
+                reply_markup=keyboard
             )
 
 async def tamil_animated_welcome_message(update: Update, context: ContextTypes.DEFAULT_TYPE, user_name: str, user_mention: str):
@@ -704,8 +703,7 @@ async def tamil_animated_welcome_message(update: Update, context: ContextTypes.D
     # Send initial empty message
     message = await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text="...",
-        reply_to_message_id=update.message.message_id
+        text="..."
     )
     
     # Start with empty text
